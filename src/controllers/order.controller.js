@@ -173,6 +173,20 @@ exports.createOrder = asyncHandler(async (req, res, next) => {
     }
   }
   
+  // اگر پرداخت انجام شده است، سفارش را با هلو همگام‌سازی کنید
+  if (order.isPaid) {
+    try {
+      const holooService = new HolooService();
+      await holooService.createInvoice(order);
+    } catch (error) {
+      logger.error(`Failed to sync order with Holoo: ${error.message}`, {
+        orderId: order._id,
+        error: error.message
+      });
+      // ادامه دهید حتی اگر همگام‌سازی با هلو ناموفق بود
+    }
+  }
+  
   // Clear cart after successful order
   cart.items = [];
   cart.coupon = undefined;
@@ -1011,5 +1025,127 @@ exports.getInvoicePdf = asyncHandler(async (req, res, next) => {
   } catch (error) {
     console.error('PDF Generation Error:', error);
     return next(new ErrorResponse('خطا در تولید فایل PDF', 500));
+  }
+});
+
+/**
+ * @desc    Send order to Holoo
+ * @route   POST /api/orders/:id/sync-with-holoo
+ * @access  Private (Admin)
+ */
+exports.syncOrderWithHoloo = asyncHandler(async (req, res, next) => {
+  const { id } = req.params;
+  
+  try {
+    // دریافت سفارش
+    const order = await Order.findById(id)
+      .populate({
+        path: 'items.product',
+        select: 'name holooErpCode holooCode syncedFromHoloo'
+      });
+    
+    if (!order) {
+      return next(new ErrorResponse('سفارش یافت نشد', 404));
+    }
+    
+    // ایجاد سرویس هلو
+    const holooService = new HolooService();
+    
+    // همگام‌سازی سفارش با هلو
+    const result = await holooService.createInvoice(order);
+    
+    res.status(200).json({
+      success: true,
+      message: 'سفارش با موفقیت با هلو همگام‌سازی شد',
+      data: {
+        holoInvoiceId: result.holoInvoiceId,
+        ...result
+      }
+    });
+  } catch (error) {
+    return next(new ErrorResponse(`خطا در همگام‌سازی سفارش با هلو: ${error.message}`, 500));
+  }
+});
+
+/**
+ * @desc    Get orders needing Holoo sync
+ * @route   GET /api/orders/holoo/pending
+ * @access  Private (Admin)
+ */
+exports.getPendingHolooOrders = asyncHandler(async (req, res, next) => {
+  try {
+    // یافتن سفارش‌های منتظر همگام‌سازی
+    const pendingOrders = await Order.find({
+      isPaid: true,
+      syncedWithHoloo: false,
+      'holooSyncDetails.retryCount': { $lt: 3 } // کمتر از 3 بار تلاش ناموفق
+    })
+    .sort({ createdAt: -1 })
+    .limit(20);
+    
+    res.status(200).json({
+      success: true,
+      count: pendingOrders.length,
+      data: pendingOrders
+    });
+  } catch (error) {
+    return next(new ErrorResponse(`خطا در دریافت سفارش‌های منتظر همگام‌سازی: ${error.message}`, 500));
+  }
+});
+
+/**
+ * @desc    Process Holoo webhook for stock update
+ * @route   POST /api/orders/holoo/webhook
+ * @access  Public (with API key)
+ */
+exports.holooWebhook = asyncHandler(async (req, res, next) => {
+  // بررسی کلید API
+  const apiKey = req.header('x-api-key');
+  
+  if (!apiKey || apiKey !== config.holoo.webhookApiKey) {
+    return next(new ErrorResponse('دسترسی غیرمجاز', 401));
+  }
+  
+  const { operation, Table, changedfields } = req.body;
+  
+  if (Table === 'product' && operation === 'UPDATE') {
+    try {
+      // پردازش تغییرات موجودی محصولات
+      const changes = JSON.parse(changedfields);
+      
+      for (const change of changes) {
+        if (change.ErpCode && (change.Few !== undefined || change.Few !== null)) {
+          // یافتن محصول مرتبط
+          const product = await Product.findOne({ holooErpCode: change.ErpCode });
+          
+          if (product) {
+            // بروزرسانی موجودی
+            product.stock = change.Few;
+            product.lastHolooSync = new Date();
+            await product.save();
+            
+            logger.info(`Updated product ${product.name} stock to ${change.Few} from Holoo webhook`);
+          }
+        }
+      }
+      
+      res.status(200).json({
+        success: true,
+        message: 'تغییرات موجودی اعمال شد'
+      });
+    } catch (error) {
+      logger.error('Error processing Holoo webhook:', error);
+      
+      res.status(500).json({
+        success: false,
+        message: `خطا در پردازش وب‌هوک: ${error.message}`
+      });
+    }
+  } else {
+    // سایر عملیات هلو فعلاً پشتیبانی نمی‌شوند
+    res.status(200).json({
+      success: true,
+      message: 'عملیات پشتیبانی نمی‌شود'
+    });
   }
 }); 

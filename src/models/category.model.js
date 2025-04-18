@@ -47,6 +47,23 @@ const categorySchema = new mongoose.Schema(
     metaTitle: String,
     metaDescription: String,
     metaKeywords: [String],
+    // اطلاعات مرتبط با هلو
+    holooErpCode: {
+      type: String,
+      index: true,
+      sparse: true, // برای دسته‌بندی‌هایی که از هلو نیستند
+    },
+    isMainCategory: {
+      type: Boolean,
+      default: false,
+    },
+    syncedFromHoloo: {
+      type: Boolean,
+      default: false,
+    },
+    lastHolooSync: {
+      type: Date,
+    },
   },
   {
     timestamps: true,

@@ -189,8 +189,17 @@ const orderSchema = new mongoose.Schema(
     holooSyncDetails: {
       syncedAt: Date,
       invoiceId: String,
-      status: String,
+      invoiceCode: String,
+      status: {
+        type: String,
+        enum: ['pending', 'success', 'failed'],
+        default: 'pending'
+      },
       errorMessage: String,
+      retryCount: {
+        type: Number,
+        default: 0
+      },
     },
   },
   {
@@ -338,6 +347,35 @@ orderSchema.methods.syncWithHoloo = async function(syncData) {
   
   await this.save();
   return this.invoice.holoSync;
+};
+
+// بروزرسانی وضعیت همگام‌سازی با هلو
+orderSchema.methods.updateHolooSyncStatus = async function(syncDetails) {
+  if (!this.holooSyncDetails) {
+    this.holooSyncDetails = {};
+  }
+  
+  this.holooSyncDetails = {
+    ...this.holooSyncDetails,
+    ...syncDetails,
+    syncedAt: new Date()
+  };
+  
+  if (syncDetails.status === 'success') {
+    this.syncedWithHoloo = true;
+  }
+  
+  return this.save();
+};
+
+// افزایش تعداد تلاش‌های ناموفق همگام‌سازی
+orderSchema.methods.incrementHolooRetryCount = async function() {
+  if (!this.holooSyncDetails) {
+    this.holooSyncDetails = { retryCount: 0 };
+  }
+  
+  this.holooSyncDetails.retryCount = (this.holooSyncDetails.retryCount || 0) + 1;
+  return this.save();
 };
 
 // Create indexes

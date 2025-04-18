@@ -1,6 +1,8 @@
 const app = require('./app');
 const colors = require('colors');
 const { initializeSocket } = require('./utils/socket');
+const HolooService = require('./utils/holooService');
+const config = require('./config/config');
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err, promise) => {
@@ -18,6 +20,18 @@ const server = app.listen(PORT, () => {
 // Initialize Socket.IO
 const io = initializeSocket(server);
 console.log(`Socket.IO initialized`.green);
+
+// Initialize Holoo integration if enabled
+if (config.holoo.enabled) {
+  try {
+    const holooService = new HolooService();
+    // Start periodic sync with Holoo
+    holooService.startPeriodicSync();
+    console.log(`Holoo integration started with sync interval of ${config.holoo.syncInterval / (60 * 1000)} minutes`.cyan);
+  } catch (error) {
+    console.error(`Failed to initialize Holoo integration: ${error.message}`.red);
+  }
+}
 
 // Handle unhandled exceptions
 process.on('uncaughtException', (err) => {

@@ -113,6 +113,28 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // اطلاعات مرتبط با هلو
+    holooErpCode: {
+      type: String,
+      index: true,
+      sparse: true, // برای محصولاتی که از هلو نیستند
+    },
+    holooCode: {
+      type: String,
+      sparse: true, // برای محصولاتی که از هلو نیستند
+    },
+    syncedFromHoloo: {
+      type: Boolean,
+      default: false,
+    },
+    lastHolooSync: {
+      type: Date,
+    },
+    holooSyncDetails: {
+      unitTitle: String,
+      mainGroupErpCode: String,
+      sideGroupErpCode: String,
+    },
   },
   {
     timestamps: true,
@@ -165,6 +187,21 @@ productSchema.methods.updateStock = async function (quantity, operation = 'decre
   }
   
   return await this.save();
+};
+
+// روش برای همگام‌سازی موجودی محصول با هلو
+productSchema.methods.syncStockWithHoloo = async function(holooService) {
+  try {
+    if (this.syncedFromHoloo && this.holooErpCode) {
+      await holooService.updateInventory(this._id, this.stock);
+      this.lastHolooSync = new Date();
+      return await this.save();
+    }
+    return this;
+  } catch (error) {
+    console.error(`Failed to sync product stock with Holoo: ${error.message}`);
+    return this;
+  }
 };
 
 // Create indexes

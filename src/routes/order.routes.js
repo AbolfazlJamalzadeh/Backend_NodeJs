@@ -8,7 +8,11 @@ const {
   cancelOrder,
   getOrderStats,
   getInvoice,
-  getInvoicePdf
+  getInvoicePdf,
+  // Holoo integration
+  syncOrderWithHoloo,
+  getPendingHolooOrders,
+  holooWebhook
 } = require('../controllers/order.controller');
 
 const { protect, authorize } = require('../middlewares/auth.middleware');
@@ -447,5 +451,116 @@ router.get('/:id/invoice', getInvoice);
  *         description: Order not found
  */
 router.get('/:id/invoice/pdf', getInvoicePdf);
+
+/**
+ * @swagger
+ * /api/orders/{id}/sync-with-holoo:
+ *   post:
+ *     summary: Synchronize order with Holoo
+ *     description: Synchronizes the order with Holoo and creates an invoice in the Holoo ERP system
+ *     tags: [Holoo]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID
+ *     responses:
+ *       200:
+ *         description: Synchronization completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ *       500:
+ *         description: Server error
+ */
+router.route('/:id/sync-with-holoo')
+  .post(protect, authorize('admin'), syncOrderWithHoloo);
+
+/**
+ * @swagger
+ * /api/orders/holoo/pending:
+ *   get:
+ *     summary: Get orders pending Holoo synchronization
+ *     description: Lists orders that have not yet been synchronized with Holoo
+ *     tags: [Holoo]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Orders list retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 count:
+ *                   type: integer
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.route('/holoo/pending')
+  .get(protect, authorize('admin'), getPendingHolooOrders);
+
+/**
+ * @swagger
+ * /api/orders/holoo/webhook:
+ *   post:
+ *     summary: Holoo webhook
+ *     description: Webhook for receiving changes from Holoo
+ *     tags: [Holoo]
+ *     parameters:
+ *       - in: header
+ *         name: x-api-key
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: API key for webhook authentication
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               operation:
+ *                 type: string
+ *               Table:
+ *                 type: string
+ *               changedfields:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Changes applied successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.route('/holoo/webhook')
+  .post(holooWebhook);
 
 module.exports = router; 

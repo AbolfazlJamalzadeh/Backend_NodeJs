@@ -5,6 +5,8 @@ const ErrorResponse = require('../utils/errorResponse');
 const holooService = require('../utils/holooService');
 const mongoose = require('mongoose');
 const { getProductReviews } = require('./review.controller');
+const HolooService = require('../utils/holooService');
+const axios = require('axios');
 
 /**
  * @desc    Get all products with filtering, sorting and pagination
@@ -681,4 +683,256 @@ const getProductReviewStats = async (productId) => {
     averageRating,
     ratingStats
   };
-}; 
+};
+
+/**
+ * @desc    Sync products from Holoo
+ * @route   POST /api/products/holoo/sync
+ * @access  Private (Admin)
+ */
+exports.syncProductsFromHoloo = asyncHandler(async (req, res, next) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 100;
+  const updateAll = req.query.updateAll === 'true';
+  
+  try {
+    const holooService = new HolooService();
+    
+    // همگام‌سازی دسته‌بندی‌ها
+    const categoriesResult = await holooService.syncCategories();
+    
+    // همگام‌سازی محصولات
+    const result = await holooService.syncProducts({
+      page,
+      limit,
+      updateAll
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: 'محصولات با موفقیت از هلو همگام‌سازی شدند',
+      data: {
+        categories: categoriesResult,
+        products: result
+      }
+    });
+  } catch (error) {
+    return next(new ErrorResponse(`خطا در همگام‌سازی با هلو: ${error.message}`, 500));
+  }
+});
+
+/**
+ * @desc    Get Holoo products without importing them
+ * @route   GET /api/products/holoo/preview
+ * @access  Private (Admin)
+ */
+exports.previewHolooProducts = asyncHandler(async (req, res, next) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  
+  try {
+    const holooService = new HolooService();
+    const products = await holooService.getProducts(page, limit);
+    
+    res.status(200).json({
+      success: true,
+      count: products.product?.length || 0,
+      data: products.product || []
+    });
+  } catch (error) {
+    return next(new ErrorResponse(`خطا در دریافت محصولات هلو: ${error.message}`, 500));
+  }
+});
+
+/**
+ * @desc    Start Holoo periodic sync
+ * @route   POST /api/products/holoo/start-periodic-sync
+ * @access  Private (Admin)
+ */
+exports.startHolooPeriodicSync = asyncHandler(async (req, res, next) => {
+  try {
+    const interval = parseInt(req.query.interval, 10) || 60; // Default: 60 minutes
+    
+    const holooService = new HolooService();
+    holooService.syncInterval = interval * 60 * 1000; // Convert to milliseconds
+    holooService.startPeriodicSync();
+    
+    res.status(200).json({
+      success: true,
+      message: `همگام‌سازی دوره‌ای با هلو هر ${interval} دقیقه شروع شد`
+    });
+  } catch (error) {
+    return next(new ErrorResponse(`خطا در شروع همگام‌سازی دوره‌ای با هلو: ${error.message}`, 500));
+  }
+});
+
+/**
+ * @desc    Stop Holoo periodic sync
+ * @route   POST /api/products/holoo/stop-periodic-sync
+ * @access  Private (Admin)
+ */
+exports.stopHolooPeriodicSync = asyncHandler(async (req, res, next) => {
+  try {
+    const holooService = new HolooService();
+    holooService.stopPeriodicSync();
+    
+    res.status(200).json({
+      success: true,
+      message: 'همگام‌سازی دوره‌ای با هلو متوقف شد'
+    });
+  } catch (error) {
+    return next(new ErrorResponse(`خطا در توقف همگام‌سازی دوره‌ای با هلو: ${error.message}`, 500));
+  }
+});
+
+/**
+ * @desc    Import a single product from Holoo
+ * @route   POST /api/products/holoo/import/:erpCode
+ * @access  Private (Admin)
+ */
+exports.importSingleProduct = asyncHandler(async (req, res, next) => {
+  const { erpCode } = req.params;
+  
+  if (!erpCode) {
+    return next(new ErrorResponse('کد محصول هلو الزامی است', 400));
+  }
+  
+  try {
+    const holooService = new HolooService();
+    
+    // دریافت محصول از هلو با کد ErpCode
+    const response = await axios.get(`${holooService.baseUrl}/Product?erpCode=${erpCode}`, {
+      headers: {
+        'Authorization': await holooService.ensureAuthenticated(),
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.data || !response.data.product || !response.data.product.length) {
+      return next(new ErrorResponse('محصول در هلو یافت نشد', 404));
+    }
+    
+    const holooProduct = response.data.product[0];
+    
+    // همگام‌سازی دسته‌بندی‌ها
+    await holooService.syncCategories();
+    
+    // جستجوی دسته‌بندی متناظر
+    let category = null;
+    
+    if (holooProduct.SideGroupErpCode) {
+      category = await Category.findOne({ holooErpCode: holooProduct.SideGroupErpCode });
+    }
+    
+    if (!category && holooProduct.MainGroupErpCode) {
+      category = await Category.findOne({ holooErpCode: holooProduct.MainGroupErpCode });
+    }
+    
+    // اگر دسته‌بندی پیدا نشد، از دسته‌بندی پیش‌فرض استفاده کنید
+    if (!category) {
+      category = await Category.findOne({ name: 'متفرقه' });
+      
+      // ایجاد دسته‌بندی پیش‌فرض اگر وجود ندارد
+      if (!category) {
+        category = await Category.create({
+          name: 'متفرقه',
+          slug: 'miscellaneous',
+          isMainCategory: true
+        });
+      }
+    }
+    
+    // تبدیل داده‌های هلو به فرمت مورد نیاز سایت
+    const productData = {
+      name: holooProduct.Name,
+      description: `محصول ${holooProduct.Name} از هلو همگام‌سازی شده است.`,
+      price: holooProduct.SellPrice || 0,
+      comparePrice: holooProduct.SellPrice2 || 0,
+      category: category._id,
+      stock: holooProduct.Few || 0,
+      holooErpCode: holooProduct.ErpCode,
+      holooCode: holooProduct.Code,
+      specifications: [
+        { title: 'کد محصول', value: holooProduct.Code },
+        { title: 'واحد', value: holooProduct.unitTitle || 'عدد' }
+      ],
+      isActive: true,
+      syncedFromHoloo: true,
+      lastHolooSync: new Date(),
+      holooSyncDetails: {
+        unitTitle: holooProduct.unitTitle,
+        mainGroupErpCode: holooProduct.MainGroupErpCode,
+        sideGroupErpCode: holooProduct.SideGroupErpCode
+      }
+    };
+    
+    // افزودن قیمت‌های بیشتر به مشخصات
+    if (holooProduct.SellPrice3) {
+      productData.specifications.push({ title: 'قیمت ۳', value: holooProduct.SellPrice3.toString() });
+    }
+    
+    // جستجوی محصول موجود با کد ErpCode هلو
+    let product = await Product.findOne({ holooErpCode: holooProduct.ErpCode });
+    
+    if (product) {
+      // بروزرسانی محصول موجود
+      Object.assign(product, productData);
+      await product.save();
+      
+      res.status(200).json({
+        success: true,
+        message: `محصول ${holooProduct.Name} با موفقیت به‌روزرسانی شد`,
+        data: product
+      });
+    } else {
+      // ایجاد محصول جدید
+      product = await Product.create(productData);
+      
+      res.status(201).json({
+        success: true,
+        message: `محصول ${holooProduct.Name} با موفقیت وارد شد`,
+        data: product
+      });
+    }
+  } catch (error) {
+    return next(new ErrorResponse(`خطا در وارد کردن محصول از هلو: ${error.message}`, 500));
+  }
+});
+
+/**
+ * @desc    Get Holoo sync status
+ * @route   GET /api/products/holoo/status
+ * @access  Private (Admin)
+ */
+exports.getHolooSyncStatus = asyncHandler(async (req, res, next) => {
+  try {
+    // تعداد محصولات همگام‌سازی شده با هلو
+    const syncedProductsCount = await Product.countDocuments({ syncedFromHoloo: true });
+    
+    // تعداد محصولات همگام‌سازی شده در 24 ساعت گذشته
+    const oneDayAgo = new Date();
+    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    
+    const recentlySyncedCount = await Product.countDocuments({
+      syncedFromHoloo: true,
+      lastHolooSync: { $gte: oneDayAgo }
+    });
+    
+    // آخرین محصولات همگام‌سازی شده
+    const recentSyncedProducts = await Product.find({ syncedFromHoloo: true })
+      .sort({ lastHolooSync: -1 })
+      .limit(5)
+      .select('name stock price lastHolooSync');
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        totalSyncedProducts: syncedProductsCount,
+        recentlySyncedCount,
+        recentSyncedProducts
+      }
+    });
+  } catch (error) {
+    return next(new ErrorResponse(`خطا در دریافت وضعیت همگام‌سازی با هلو: ${error.message}`, 500));
+  }
+}); 

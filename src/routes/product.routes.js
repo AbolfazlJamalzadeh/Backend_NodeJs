@@ -11,7 +11,14 @@ const {
   getFeaturedProducts,
   getRecentProducts,
   getPopularProducts,
-  updateProductInventory
+  updateProductInventory,
+  // Holoo integration endpoints
+  syncProductsFromHoloo,
+  previewHolooProducts,
+  importSingleProduct,
+  startHolooPeriodicSync,
+  stopHolooPeriodicSync,
+  getHolooSyncStatus
 } = require('../controllers/product.controller');
 
 const { protect, authorize } = require('../middlewares/auth.middleware');
@@ -386,5 +393,180 @@ router.delete('/:id', protect, authorize('admin', 'manager'), deleteProduct);
  *         description: Product not found
  */
 router.put('/:id/inventory', protect, authorize('admin', 'manager'), updateProductInventory);
+
+/**
+ * @swagger
+ * /api/products/holoo/sync:
+ *   post:
+ *     summary: Synchronize products from Holoo
+ *     description: Synchronizes products and categories from Holoo ERP system to the website
+ *     tags: [Holoo]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Page number for paginated synchronization
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Number of products per page
+ *       - in: query
+ *         name: updateAll
+ *         schema:
+ *           type: boolean
+ *         description: Whether to update all products or only those that have changed
+ *     responses:
+ *       200:
+ *         description: Synchronization completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.route('/holoo/sync')
+  .post(protect, authorize('admin'), syncProductsFromHoloo);
+
+/**
+ * @swagger
+ * /api/products/holoo/preview:
+ *   get:
+ *     summary: Preview Holoo products without importing
+ *     description: Shows the list of products available in Holoo without synchronizing them
+ *     tags: [Holoo]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Number of products per page
+ *     responses:
+ *       200:
+ *         description: Products retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.route('/holoo/preview')
+  .get(protect, authorize('admin'), previewHolooProducts);
+
+/**
+ * @swagger
+ * /api/products/holoo/import/{erpCode}:
+ *   post:
+ *     summary: Import a specific product from Holoo
+ *     description: Imports a specific product with ErpCode from Holoo
+ *     tags: [Holoo]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: erpCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ErpCode of the product in Holoo
+ *     responses:
+ *       200:
+ *         description: Product updated successfully
+ *       201:
+ *         description: Product created successfully
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Product not found in Holoo
+ *       500:
+ *         description: Server error
+ */
+router.route('/holoo/import/:erpCode')
+  .post(protect, authorize('admin'), importSingleProduct);
+
+/**
+ * @swagger
+ * /api/products/holoo/start-periodic-sync:
+ *   post:
+ *     summary: Start periodic synchronization with Holoo
+ *     description: Starts the periodic synchronization process with Holoo
+ *     tags: [Holoo]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: interval
+ *         schema:
+ *           type: integer
+ *         description: Synchronization interval in minutes
+ *     responses:
+ *       200:
+ *         description: Periodic synchronization started
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.route('/holoo/start-periodic-sync')
+  .post(protect, authorize('admin'), startHolooPeriodicSync);
+
+/**
+ * @swagger
+ * /api/products/holoo/stop-periodic-sync:
+ *   post:
+ *     summary: Stop periodic synchronization with Holoo
+ *     description: Stops the periodic synchronization process with Holoo
+ *     tags: [Holoo]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Periodic synchronization stopped
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.route('/holoo/stop-periodic-sync')
+  .post(protect, authorize('admin'), stopHolooPeriodicSync);
+
+/**
+ * @swagger
+ * /api/products/holoo/status:
+ *   get:
+ *     summary: Get Holoo synchronization status
+ *     description: Shows the current status of Holoo synchronization
+ *     tags: [Holoo]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Status information retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Server error
+ */
+router.route('/holoo/status')
+  .get(protect, authorize('admin'), getHolooSyncStatus);
 
 module.exports = router; 

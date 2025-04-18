@@ -3,49 +3,46 @@ require('dotenv').config();
 
 // Config object
 const config = {
-  // Environment
-  env: process.env.NODE_ENV || 'development',
-  
-  // Server
+  // Environment & Server
+  environment: process.env.NODE_ENV || 'development',
   port: process.env.PORT || 3000,
   
-  // Database
-  mongodb: {
-    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/ecommerce',
-    options: {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    }
+  // MongoDB
+  database: {
+    url: process.env.MONGO_URI || 'mongodb://localhost:27017/dengi'
   },
   
   // JWT
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+    secret: process.env.JWT_SECRET || '',
+    expiresIn: process.env.JWT_EXPIRES_IN || '30d'
   },
   
-  // Holoo configuration
+  // Holoo API
   holoo: {
-    enabled: process.env.HOLOO_ENABLED === 'true' || false,
-    apiUrl: process.env.HOLOO_API_URL || 'https://api.holoo.app/v1',
-    apiKey: process.env.HOLOO_API_KEY || '',
+    active: process.env.HOLOO_ACTIVE === 'true' || false,
+    apiUrl: process.env.HOLOO_API_URL || '',
+    username: process.env.HOLOO_USERNAME || '',
+    password: process.env.HOLOO_PASSWORD || '',
+    dbname: process.env.HOLOO_DBNAME || '',
+    syncInterval: parseInt(process.env.HOLOO_SYNC_INTERVAL || '3600', 10) * 1000,
+    webhookApiKey: process.env.HOLOO_WEBHOOK_API_KEY || ''
   },
   
   // Payment
-  payment: {
-    zarinpal: {
-      merchantId: process.env.ZARINPAL_MERCHANT_ID || '',
-      callbackUrl: process.env.ZARINPAL_CALLBACK_URL || 'http://localhost:3000/api/payment/verify',
-      sandbox: process.env.ZARINPAL_SANDBOX === 'true' || true
-    }
+  zarinpal: {
+    active: process.env.ZARINPAL_ACTIVE === 'true' || false,
+    merchantId: process.env.ZARINPAL_MERCHANT || '',
+    callbackUrl: process.env.ZARINPAL_CALLBACK_URL || '',
+    sandbox: process.env.ZARINPAL_SANDBOX === 'true' || false
   },
   
   // SMS
   sms: {
     active: process.env.SMS_ACTIVE === 'true' || false,
-    provider: process.env.SMS_PROVIDER || 'kavenegar',
-    apiKey: process.env.SMS_API_KEY || '',
-    sender: process.env.SMS_SENDER || '10008663'
+    provider: process.env.SMS_PROVIDER || 'ghasedak',
+    apiKey: process.env.GHASEDAK_API_KEY || '',
+    sender: process.env.GHASEDAK_LINE_NUMBER || ''
   },
   
   // Cloudinary
@@ -55,8 +52,8 @@ const config = {
     api_secret: process.env.CLOUDINARY_API_SECRET || ''
   },
   
-  // Frontend
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3001'
+  // Frontend URL
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173'
 };
 
 module.exports = config; 
