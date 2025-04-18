@@ -565,7 +565,7 @@ class HolooService {
         await this.syncProducts({ updateAll: true });
         
         logger.info('Completed scheduled sync with Holoo');
-      } catch (error) {
+    } catch (error) {
         logger.error('Error during scheduled Holoo sync', {
           error: error.message,
           stack: error.stack
